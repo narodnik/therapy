@@ -256,10 +256,16 @@ def handle_libinput_events(name, pub, ze, screen):
                 size = screen.get_rect()
                 w, h = size.w, size.h
                 w_x, w_y = x * w, y * h
+                # Transform from local (view) to global space
+                w_x /= PATIENTS[name].scale
+                w_y /= PATIENTS[name].scale
+                w_x += PATIENTS[name].view_x
+                w_y += PATIENTS[name].view_y
                 PATIENTS[name].wacom_x = w_x
                 PATIENTS[name].wacom_y = w_y
                 if PATIENTS[name].down:
                     PATIENTS[name].mouse_track[-1][1].append((w_x, w_y))
+                    draw_last_segment(name, name)
                 pub.send_string(ze.mouse_motion(w_x, w_y))
 
     pub.close()
