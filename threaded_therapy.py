@@ -19,6 +19,8 @@ CLR_GREEN = (0, 255, 0)
 CLR_CYAN = (0, 255, 255)
 CLR_YELLOW = (255, 255, 0)
 
+ZOOM_INC = 0.1
+
 keydown_up = False
 keydown_down = False
 keydown_right = False
@@ -35,6 +37,7 @@ class Patient:
         self.wacom_y = 0
         self.view_x = 0
         self.view_y = 0
+        self.scale = 1
         self.brush_size = 1
         self.brush_color = CLR_RED
 
@@ -97,6 +100,8 @@ def handle_pygame_events(name, pub, ze, is_libbinput_enabled):
 
             w_x, w_y = event.pos
             # Transform from local (view) to global space
+            w_x /= PATIENTS[name].scale
+            w_y /= PATIENTS[name].scale
             w_x += PATIENTS[name].view_x
             w_y += PATIENTS[name].view_y
             PATIENTS[name].wacom_x = w_x
@@ -131,6 +136,24 @@ def handle_pygame_events(name, pub, ze, is_libbinput_enabled):
                 keydown_right = True
             elif event.key == pygame.K_LEFT:
                 keydown_left = True
+
+            elif event.key == pygame.K_EQUALS:
+                PATIENTS[name].scale *= 1 + ZOOM_INC
+                with buffer_lock:
+                    rect = buffer.get_rect()
+                    screen_w, screen_h = rect.w, rect.h
+                # we want to center zoom so also offset the origin
+                PATIENTS[name].view_x += ZOOM_INC*screen_w/2
+                PATIENTS[name].view_y += ZOOM_INC*screen_h/2
+                redraw(name)
+            elif event.key == pygame.K_MINUS:
+                PATIENTS[name].scale *= 1 - ZOOM_INC
+                with buffer_lock:
+                    rect = buffer.get_rect()
+                    screen_w, screen_h = rect.w, rect.h
+                PATIENTS[name].view_x -= ZOOM_INC*screen_w/2
+                PATIENTS[name].view_y -= ZOOM_INC*screen_h/2
+                redraw(name)
 
             elif event.key == pygame.K_0:
                 PATIENTS[name].brush_color = CLR_BLACK
@@ -317,10 +340,16 @@ def redraw(name):
                 start_x -= p.view_x
                 start_y -= p.view_y
 
+                start_x *= p.scale
+                start_y *= p.scale
+
                 for end in segment[1:]:
                     end_x, end_y = end
                     end_x -= p.view_x
                     end_y -= p.view_y
+
+                    end_x *= p.scale
+                    end_y *= p.scale
 
                     pygame.draw.line(buffer, clr,
                                      (start_x, start_y),
@@ -346,6 +375,11 @@ def draw_last_segment(name, patient):
         end_x, end_y = end
         end_x -= p.view_x
         end_y -= p.view_y
+
+        start_x *= p.scale
+        start_y *= p.scale
+        end_x *= p.scale
+        end_y *= p.scale
 
         pygame.draw.line(buffer, clr,
                          (start_x, start_y),
@@ -419,6 +453,8 @@ def main(frontend, backend, name, topic, is_libinput_enabled):
             # Transform from global to local (view) space
             wacom_x = patient.wacom_x - p.view_x
             wacom_y = patient.wacom_y - p.view_y
+            wacom_x *= p.scale
+            wacom_y *= p.scale
             pygame.draw.circle(screen,
                                patient.brush_color,
                                (wacom_x, wacom_y),
