@@ -201,6 +201,7 @@ def handle_pygame_events(name, pub, ze, is_libbinput_enabled):
                 except StopIteration:
                     idx = len(trk) - 1
                 PATIENTS[name].mouse_track = trk[:idx]
+                redraw(name)
 
 
         elif event.type == pygame.KEYUP:
