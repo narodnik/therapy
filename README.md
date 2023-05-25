@@ -2,10 +2,10 @@
 
 Run this command:
 ```
-python threaded_therapy.py -f tcp://SERVER:5559 -b tcp://SERVER:5560 -p NICK
+python threaded_therapy.py -f tcp://systemd.rehab:5559 -b tcp://systemd.rehab:5560 -p NICK
 ```
 
-Where NICK is a nickname you choose, and SERVER is the server address.
+Where NICK is a nickname you choose.
 
 # Wayland/libinput
 
@@ -16,5 +16,5 @@ libinput debug-tablet
 
 Usage is the same as above, except we append the flag `-i`.
 ```
-python threaded_therapy.py -f tcp://SERVER:5559 -b tcp://SERVER:5560 -p NICK -i
+python threaded_therapy.py -f tcp://systemd.rehab:5559 -b tcp://systemd.rehab:5560 -p NICK -i
 ```
