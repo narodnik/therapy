@@ -35,6 +35,13 @@ class TherapyDbusApi(
     async def zoom(self, scale):
         raise NotImplementedError
 
+    @dbus_method_async(
+        input_signature='dd',
+        result_signature='dd',
+    )
+    async def screen_to_world(self, x: float, y: float) -> (float, float):
+        raise NotImplementedError
+
     @dbus_signal_async(
         signal_signature='sasb'
     )

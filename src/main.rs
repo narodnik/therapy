@@ -12,11 +12,13 @@ enum CommandRequest {
     Hello,
     DrawLine(String, f32, f32, f32, f32, f32, f32, f32, f32, f32),
     Pan(f32, f32),
-    Zoom(f32)
+    Zoom(f32),
+    ScreenToWorld(f32, f32),
 }
 
 enum CommandResponse {
-    Hello(String)
+    Hello(String),
+    ScreenToWorld(f32, f32),
 }
 
 trait MouseButtonAsString {
@@ -221,7 +223,11 @@ impl Stage {
             CommandRequest::DrawLine(layer_name, x1, y1, x2, y2, thickness, r, g, b, a) =>
                 self.draw_line(layer_name, x1, y1, x2, y2, thickness, r, g, b, a),
             CommandRequest::Pan(x, y) => self.pan(x, y),
-            CommandRequest::Zoom(scale) => self.zoom(scale)
+            CommandRequest::Zoom(scale) => self.zoom(scale),
+            CommandRequest::ScreenToWorld(x, y) => {
+                let (x, y) = self.screen_to_world(x, y);
+                self.send_res.send(CommandResponse::ScreenToWorld(x, y)).unwrap();
+            }
         }
     }
 
@@ -254,10 +260,10 @@ impl Stage {
         self.proj * glam::Mat4::from_scale(glam::Vec3::new(2500./screen_width, 2500./screen_height, 1.))
     }
 
+    // Screen here refers to (0, 1)
     fn screen_to_world(&self, x: f32, y: f32) -> (f32, f32) {
-        let (screen_width, screen_height) = window::screen_size();
-        let x = 2.*x/screen_width - 1.;
-        let y = 1. - 2.*y/screen_height;
+        let x = 2.*x - 1.;
+        let y = 1. - 2.*y;
         let pos = glam::vec4(x, y, 0., 1.);
         let proj_inv = self.calc_proj_matrix().inverse();
         let world_pos = (proj_inv * pos).xy();
@@ -511,6 +517,8 @@ impl EventHandler for Stage {
         */
     }
     fn mouse_motion_event(&mut self, x: f32, y: f32) {
+        let (screen_width, screen_height) = window::screen_size();
+        let (x, y) = (x/screen_width, y/screen_height);
         let (x, y) = self.screen_to_world(x, y);
         smol::future::block_on(DbusApi::mouse_motion(self.iface_ref.signal_context(), x, y)).expect("signal");
         //println!("{} {}", x, y);
@@ -521,12 +529,16 @@ impl EventHandler for Stage {
         //self.proj *= glam::Mat4::from_scale(glam::Vec3::new(scale, scale, scale));
     }
     fn mouse_button_down_event(&mut self, button: MouseButton, x: f32, y: f32) {
+        let (screen_width, screen_height) = window::screen_size();
+        let (x, y) = (x/screen_width, y/screen_height);
         let (x, y) = self.screen_to_world(x, y);
         smol::future::block_on(DbusApi::mouse_button_down(self.iface_ref.signal_context(), button.to_str(), x, y)).expect("signal");
         //window::show_keyboard(true);
         //println!("{:?} {} {}", button, x, y);
     }
     fn mouse_button_up_event(&mut self, button: MouseButton, x: f32, y: f32) {
+        let (screen_width, screen_height) = window::screen_size();
+        let (x, y) = (x/screen_width, y/screen_height);
         let (x, y) = self.screen_to_world(x, y);
         smol::future::block_on(DbusApi::mouse_button_up(self.iface_ref.signal_context(), button.to_str(), x, y)).expect("signal");
     }
@@ -569,19 +581,6 @@ fn draw_line(x1: f32, y1: f32, x2: f32, y2: f32, thickness: f32, color: [f32; 4]
     )
 }
 
-
-macro_rules! request {
-    ($self:expr, $cmd:ident) => {
-        {
-            let res = dbus_request($self, CommandRequest::$cmd);
-            match res {
-                CommandResponse::$cmd(res) => res,
-                _ => panic!("unexpected result!")
-            }
-        }
-    };
-}
-
 struct DbusApi {
     send_req: mpsc::Sender<CommandRequest>,
     recv_res: Arc<Mutex<mpsc::Receiver<CommandResponse>>>
@@ -590,7 +589,11 @@ struct DbusApi {
 #[zbus::interface(name = "org.therapy.Therapy")]
 impl DbusApi {
     async fn say_hello(&self) -> String {
-        request!(self, Hello)
+        let res = dbus_request(self, CommandRequest::Hello);
+        match res {
+            CommandResponse::Hello(res) => res,
+            _ => panic!("unexpected result!")
+        }
     }
 
     async fn draw_line(&self,
@@ -608,6 +611,14 @@ impl DbusApi {
     async fn zoom(&self, scale: f32) {
         let cmd = CommandRequest::Zoom(scale);
         self.send_req.send(cmd).unwrap();
+    }
+
+    async fn screen_to_world(&self, x: f32, y: f32) -> (f32, f32) {
+        let res = dbus_request(self, CommandRequest::ScreenToWorld(x, y));
+        match res {
+            CommandResponse::ScreenToWorld(x, y) => (x, y),
+            _ => panic!("unexpected result!")
+        }
     }
 
     #[zbus(signal)]
