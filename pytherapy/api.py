@@ -42,6 +42,46 @@ class TherapyDbusApi(
     async def screen_to_world(self, x: float, y: float) -> (float, float):
         raise NotImplementedError
 
+    @dbus_method_async(
+        result_signature='as',
+    )
+    async def get_layers(self) -> list[str]:
+        raise NotImplementedError
+
+    @dbus_method_async(
+        input_signature='s',
+        result_signature='b',
+    )
+    async def delete_layer(self, layer_name: str) -> bool:
+        raise NotImplementedError
+
+    @dbus_method_async(
+        input_signature='s',
+        result_signature='b',
+    )
+    async def show_layer(self, layer_name: str) -> bool:
+        raise NotImplementedError
+
+    @dbus_method_async(
+        input_signature='s',
+        result_signature='b',
+    )
+    async def hide_layer(self, layer_name: str) -> bool:
+        raise NotImplementedError
+
+    @dbus_method_async(
+        input_signature='sdd',
+        result_signature='b',
+    )
+    async def set_layer_pos(self, layer_name: str, x: float, y: float) -> bool:
+        raise NotImplementedError
+
+    @dbus_method_async(
+        result_signature='dd',
+    )
+    async def screen_size(self) -> (float, float):
+        raise NotImplementedError
+
     @dbus_signal_async(
         signal_signature='sasb'
     )

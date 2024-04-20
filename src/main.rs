@@ -1,6 +1,11 @@
-use miniquad::*;
+#![feature(stmt_expr_attributes)]
 use glam::Vec4Swizzles;
-use std::{collections::HashMap, sync::{Arc, Mutex, mpsc}, time};
+use miniquad::*;
+use std::{
+    collections::HashMap,
+    sync::{mpsc, Arc, Mutex},
+    time,
+};
 
 #[macro_use]
 extern crate log;
@@ -14,11 +19,23 @@ enum CommandRequest {
     Pan(f32, f32),
     Zoom(f32),
     ScreenToWorld(f32, f32),
+    GetLayers,
+    DeleteLayer(String),
+    ShowLayer(String),
+    HideLayer(String),
+    SetLayerPos(String, f32, f32),
+    ScreenSize,
 }
 
 enum CommandResponse {
     Hello(String),
     ScreenToWorld(f32, f32),
+    GetLayers(Vec<String>),
+    DeleteLayer(bool),
+    ShowLayer(bool),
+    HideLayer(bool),
+    SetLayerPos(bool),
+    ScreenSize(f32, f32),
 }
 
 trait MouseButtonAsString {
@@ -31,7 +48,7 @@ impl MouseButtonAsString for MouseButton {
             MouseButton::Right => "Right",
             MouseButton::Left => "Left",
             MouseButton::Middle => "Middle",
-            MouseButton::Unknown => "Unknown"
+            MouseButton::Unknown => "Unknown",
         }
     }
 }
@@ -46,7 +63,8 @@ struct Vertex {
 struct Layer {
     model: glam::Mat4,
     verts: Vec<Vertex>,
-    idxs: Vec<u16>,
+    idxs: Vec<u32>,
+    is_hidden: bool,
 }
 
 impl Layer {
@@ -55,6 +73,7 @@ impl Layer {
             model: glam::Mat4::IDENTITY,
             verts: vec![],
             idxs: vec![],
+            is_hidden: false,
         }
     }
 }
@@ -67,14 +86,15 @@ struct Stage {
     proj: glam::Mat4,
     recv_req: mpsc::Receiver<CommandRequest>,
     send_res: mpsc::Sender<CommandResponse>,
-    iface_ref: zbus::InterfaceRef<DbusApi>
+    iface_ref: zbus::InterfaceRef<DbusApi>,
 }
 
 impl Stage {
-    pub fn new(recv_req: mpsc::Receiver<CommandRequest>,
-               send_res: mpsc::Sender<CommandResponse>,
-                iface_ref: zbus::InterfaceRef<DbusApi>
-               ) -> Stage {
+    pub fn new(
+        recv_req: mpsc::Receiver<CommandRequest>,
+        send_res: mpsc::Sender<CommandResponse>,
+        iface_ref: zbus::InterfaceRef<DbusApi>,
+    ) -> Stage {
         let mut ctx: Box<dyn RenderingBackend> = window::new_rendering_backend();
 
         let white_texture = ctx.new_texture_from_rgba8(1, 1, &[255, 255, 255, 255]);
@@ -208,41 +228,131 @@ impl Stage {
             layers: HashMap::new(),
             recv_req,
             send_res,
-            iface_ref
+            iface_ref,
         };
-        stage.draw_line("origin".to_string(), -0.1, 0., 0.1, 0., 0.001, 1., 0., 0., 1.);
-        stage.draw_line("origin".to_string(), 0., 0.1, 0., -0.1, 0.001, 1., 0., 0., 1.);
+        //stage.layers.insert("box1".to_string(), layer1);
+        //stage.layers.insert("box2".to_string(), layer2);
+        #[rustfmt::skip]
+        stage.draw_line(
+            "origin".to_string(),
+            -0.1, 0., 0.1, 0.,
+            0.001,
+            1., 0., 0., 1.,
+        );
+        #[rustfmt::skip]
+        stage.draw_line(
+            "origin".to_string(),
+            0., 0.1, 0., -0.1,
+            0.001,
+            1., 0., 0., 1.,
+        );
         stage
     }
 
     fn handle_cmd(&mut self, cmd: CommandRequest) {
         match cmd {
             CommandRequest::Hello => {
-                self.send_res.send(CommandResponse::Hello("hello".to_string())).unwrap();
+                debug!("hello()");
+                self.send_res
+                    .send(CommandResponse::Hello("hello".to_string()))
+                    .unwrap();
             }
-            CommandRequest::DrawLine(layer_name, x1, y1, x2, y2, thickness, r, g, b, a) =>
-                self.draw_line(layer_name, x1, y1, x2, y2, thickness, r, g, b, a),
+            CommandRequest::DrawLine(layer_name, x1, y1, x2, y2, thickness, r, g, b, a) => {
+                self.draw_line(layer_name, x1, y1, x2, y2, thickness, r, g, b, a)
+            }
             CommandRequest::Pan(x, y) => self.pan(x, y),
             CommandRequest::Zoom(scale) => self.zoom(scale),
             CommandRequest::ScreenToWorld(x, y) => {
+                debug!("screen_to_world({}, {})", x, y);
                 let (x, y) = self.screen_to_world(x, y);
-                self.send_res.send(CommandResponse::ScreenToWorld(x, y)).unwrap();
+                self.send_res
+                    .send(CommandResponse::ScreenToWorld(x, y))
+                    .unwrap();
+            }
+            CommandRequest::GetLayers => {
+                debug!("get_layers()");
+                let layer_names = self.layers.keys().cloned().collect();
+                self.send_res
+                    .send(CommandResponse::GetLayers(layer_names))
+                    .unwrap();
+            }
+            CommandRequest::DeleteLayer(layer_name) => {
+                debug!("delete_layer({})", layer_name);
+                let is_success = self.layers.remove(&layer_name).is_some();
+                self.send_res
+                    .send(CommandResponse::DeleteLayer(is_success))
+                    .unwrap();
+            }
+            CommandRequest::ShowLayer(layer_name) => {
+                debug!("show_layer({})", layer_name);
+                let is_success = match self.layers.get_mut(&layer_name) {
+                    Some(layer) => {
+                        layer.is_hidden = false;
+                        true
+                    }
+                    None => false,
+                };
+                self.send_res
+                    .send(CommandResponse::ShowLayer(is_success))
+                    .unwrap();
+            }
+            CommandRequest::HideLayer(layer_name) => {
+                debug!("hide_layer({})", layer_name);
+                let is_success = match self.layers.get_mut(&layer_name) {
+                    Some(layer) => {
+                        layer.is_hidden = true;
+                        true
+                    }
+                    None => false,
+                };
+                self.send_res
+                    .send(CommandResponse::HideLayer(is_success))
+                    .unwrap();
+            }
+            CommandRequest::SetLayerPos(layer_name, x, y) => {
+                debug!("set_layer_pos({}, {}, {})", layer_name, x, y);
+                let model = glam::Mat4::from_translation(glam::Vec3::new(x, y, 0.));
+                let is_success = match self.layers.get_mut(&layer_name) {
+                    Some(layer) => {
+                        layer.model = model;
+                        true
+                    }
+                    None => false,
+                };
+                self.send_res
+                    .send(CommandResponse::SetLayerPos(is_success))
+                    .unwrap();
+            }
+            CommandRequest::ScreenSize => {
+                debug!("screen_size()");
+                let (screen_width, screen_height) = window::screen_size();
+                self.send_res
+                    .send(CommandResponse::ScreenSize(screen_width, screen_height))
+                    .unwrap();
             }
         }
     }
 
-    fn draw_line(&mut self,
-    layer_name: String, x1: f32, y1: f32, x2: f32, y2: f32, thickness: f32, r: f32, g: f32, b: f32, a: f32) {
-        debug!("draw_line({}, {}, {}, {}, {}, {}, {}, {}, {}, {})", layer_name, x1, y1, x2, y2, thickness, r, g, b, a);
-                let color = [r, g, b, a];
-                let (mut verts, mut idxs) = draw_line(x1, y1, x2, y2, thickness, color);
-                let layer = self.layers.entry(layer_name).or_insert_with(Layer::new);
-                let offset = layer.verts.len() as u16;
-                layer.verts.append(&mut verts);
-                for idx in &mut idxs {
-                    *idx += offset;
-                }
-                layer.idxs.append(&mut idxs);
+    #[rustfmt::skip]
+    fn draw_line(
+        &mut self, layer_name: String,
+        x1: f32, y1: f32, x2: f32, y2: f32,
+        thickness: f32,
+        r: f32, g: f32, b: f32, a: f32,
+    ) {
+        debug!(
+            "draw_line({}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
+            layer_name, x1, y1, x2, y2, thickness, r, g, b, a
+        );
+        let color = [r, g, b, a];
+        let (mut verts, mut idxs) = draw_line(x1, y1, x2, y2, thickness, color);
+        let layer = self.layers.entry(layer_name).or_insert_with(Layer::new);
+        let offset = layer.verts.len() as u32;
+        layer.verts.append(&mut verts);
+        for idx in &mut idxs {
+            *idx += offset;
+        }
+        layer.idxs.append(&mut idxs);
     }
 
     fn pan(&mut self, x: f32, y: f32) {
@@ -257,13 +367,18 @@ impl Stage {
     fn calc_proj_matrix(&self) -> glam::Mat4 {
         let (screen_width, screen_height) = window::screen_size();
         // Preserve the same size irregardless of the screen size
-        self.proj * glam::Mat4::from_scale(glam::Vec3::new(2500./screen_width, 2500./screen_height, 1.))
+        self.proj
+            * glam::Mat4::from_scale(glam::Vec3::new(
+                2500. / screen_width,
+                2500. / screen_height,
+                1.,
+            ))
     }
 
     // Screen here refers to (0, 1)
     fn screen_to_world(&self, x: f32, y: f32) -> (f32, f32) {
-        let x = 2.*x - 1.;
-        let y = 1. - 2.*y;
+        let x = 2. * x - 1.;
+        let y = 1. - 2. * y;
         let pos = glam::vec4(x, y, 0., 1.);
         let proj_inv = self.calc_proj_matrix().inverse();
         let world_pos = (proj_inv * pos).xy();
@@ -278,7 +393,7 @@ impl EventHandler for Stage {
             // Only sleep for 10ms so we maintain 60 FPS
             match self.recv_req.recv_timeout(time::Duration::from_millis(10)) {
                 Ok(cmd) => self.handle_cmd(cmd),
-                Err(mpsc::RecvTimeoutError::Timeout) => {},
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
                     panic!("Rx should not be disconnected!")
                 }
@@ -297,7 +412,11 @@ impl EventHandler for Stage {
         //let proj = self.proj * glam::Mat4::from_scale(glam::Vec3::new(2500./screen_width, 2500./screen_height, 1.));
         let proj = self.calc_proj_matrix();
 
-        for (i, layer) in self.layers.values().enumerate() {
+        for layer in self.layers.values() {
+            if layer.is_hidden {
+                continue
+            }
+
             let vertex_buffer = self.ctx.new_buffer(
                 BufferType::VertexBuffer,
                 BufferUsage::Immutable,
@@ -320,8 +439,10 @@ impl EventHandler for Stage {
             self.ctx.begin_default_pass(PassAction::Nothing);
 
             self.ctx.apply_pipeline(&self.pipeline);
-            self.ctx.apply_viewport(0, 0, screen_width as i32, screen_height as i32);
-            self.ctx.apply_scissor_rect(0, 0, screen_width as i32, screen_height as i32);
+            self.ctx
+                .apply_viewport(0, 0, screen_width as i32, screen_height as i32);
+            self.ctx
+                .apply_scissor_rect(0, 0, screen_width as i32, screen_height as i32);
             self.ctx.apply_bindings(&bindings);
 
             let mut uniforms_data = [0u8; 128];
@@ -329,12 +450,10 @@ impl EventHandler for Stage {
             uniforms_data[0..64].copy_from_slice(&data);
             let data: [u8; 64] = unsafe { std::mem::transmute_copy(&proj) };
             uniforms_data[64..].copy_from_slice(&data);
-            assert_eq!(128, 2*UniformType::Mat4.size());
+            assert_eq!(128, 2 * UniformType::Mat4.size());
 
-            self.ctx.apply_uniforms_from_bytes(
-                uniforms_data.as_ptr(),
-                uniforms_data.len(),
-            );
+            self.ctx
+                .apply_uniforms_from_bytes(uniforms_data.as_ptr(), uniforms_data.len());
 
             self.ctx.draw(0, layer.idxs.len() as i32, 1);
             self.ctx.end_render_pass();
@@ -344,13 +463,27 @@ impl EventHandler for Stage {
 
     fn key_down_event(&mut self, keycode: KeyCode, modifiers: KeyMods, repeat: bool) {
         let mut mods = vec![];
-        if modifiers.shift { mods.push("shift"); }
-        if modifiers.ctrl { mods.push("ctrl"); }
-        if modifiers.alt { mods.push("alt"); }
-        if modifiers.logo { mods.push("logo"); }
+        if modifiers.shift {
+            mods.push("shift");
+        }
+        if modifiers.ctrl {
+            mods.push("ctrl");
+        }
+        if modifiers.alt {
+            mods.push("alt");
+        }
+        if modifiers.logo {
+            mods.push("logo");
+        }
 
         let send_key_down = |key| {
-            smol::future::block_on(DbusApi::key_down(self.iface_ref.signal_context(), key, mods, repeat)).expect("signal");
+            smol::future::block_on(DbusApi::key_down(
+                self.iface_ref.signal_context(),
+                key,
+                mods,
+                repeat,
+            ))
+            .expect("signal");
         };
         match keycode {
             KeyCode::Space => send_key_down("Space"),
@@ -518,29 +651,43 @@ impl EventHandler for Stage {
     }
     fn mouse_motion_event(&mut self, x: f32, y: f32) {
         let (screen_width, screen_height) = window::screen_size();
-        let (x, y) = (x/screen_width, y/screen_height);
+        let (x, y) = (x / screen_width, y / screen_height);
         let (x, y) = self.screen_to_world(x, y);
-        smol::future::block_on(DbusApi::mouse_motion(self.iface_ref.signal_context(), x, y)).expect("signal");
+        smol::future::block_on(DbusApi::mouse_motion(self.iface_ref.signal_context(), x, y))
+            .expect("signal");
         //println!("{} {}", x, y);
     }
     fn mouse_wheel_event(&mut self, x: f32, y: f32) {
-        smol::future::block_on(DbusApi::mouse_wheel(self.iface_ref.signal_context(), x, y)).expect("signal");
+        smol::future::block_on(DbusApi::mouse_wheel(self.iface_ref.signal_context(), x, y))
+            .expect("signal");
         //let scale = 1.0 + y/10.;
         //self.proj *= glam::Mat4::from_scale(glam::Vec3::new(scale, scale, scale));
     }
     fn mouse_button_down_event(&mut self, button: MouseButton, x: f32, y: f32) {
         let (screen_width, screen_height) = window::screen_size();
-        let (x, y) = (x/screen_width, y/screen_height);
+        let (x, y) = (x / screen_width, y / screen_height);
         let (x, y) = self.screen_to_world(x, y);
-        smol::future::block_on(DbusApi::mouse_button_down(self.iface_ref.signal_context(), button.to_str(), x, y)).expect("signal");
+        smol::future::block_on(DbusApi::mouse_button_down(
+            self.iface_ref.signal_context(),
+            button.to_str(),
+            x,
+            y,
+        ))
+        .expect("signal");
         //window::show_keyboard(true);
         //println!("{:?} {} {}", button, x, y);
     }
     fn mouse_button_up_event(&mut self, button: MouseButton, x: f32, y: f32) {
         let (screen_width, screen_height) = window::screen_size();
-        let (x, y) = (x/screen_width, y/screen_height);
+        let (x, y) = (x / screen_width, y / screen_height);
         let (x, y) = self.screen_to_world(x, y);
-        smol::future::block_on(DbusApi::mouse_button_up(self.iface_ref.signal_context(), button.to_str(), x, y)).expect("signal");
+        smol::future::block_on(DbusApi::mouse_button_up(
+            self.iface_ref.signal_context(),
+            button.to_str(),
+            x,
+            y,
+        ))
+        .expect("signal");
     }
 
     fn resize_event(&mut self, width: f32, height: f32) {
@@ -549,7 +696,14 @@ impl EventHandler for Stage {
     }
 }
 
-fn draw_line(x1: f32, y1: f32, x2: f32, y2: f32, thickness: f32, color: [f32; 4]) -> (Vec<Vertex>, Vec<u16>) {
+fn draw_line(
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    thickness: f32,
+    color: [f32; 4],
+) -> (Vec<Vertex>, Vec<u32>) {
     let dx = x2 - x1;
     let dy = y2 - y1;
 
@@ -562,7 +716,7 @@ fn draw_line(x1: f32, y1: f32, x2: f32, y2: f32, thickness: f32, color: [f32; 4]
     // This is an error but lets be more forgiving
     //assert!(tlen >= f32::EPSILON);
     if tlen < f32::EPSILON {
-        return (vec![], vec![])
+        return (vec![], vec![]);
     }
     let tx = nx / tlen;
     let ty = ny / tlen;
@@ -570,20 +724,21 @@ fn draw_line(x1: f32, y1: f32, x2: f32, y2: f32, thickness: f32, color: [f32; 4]
     // We don't care about UV coords
     let uv = [0f32; 2];
 
+    #[rustfmt::skip]
     (
         vec![
-            Vertex { pos: [x1 + tx, y1 + ty], color, uv },
-            Vertex { pos: [x1 - tx, y1 - ty], color, uv },
-            Vertex { pos: [x2 + tx, y2 + ty], color, uv },
-            Vertex { pos: [x2 - tx, y2 - ty], color, uv },
+            Vertex { pos: [x1 + tx, y1 + ty], color, uv, },
+            Vertex { pos: [x1 - tx, y1 - ty], color, uv, },
+            Vertex { pos: [x2 + tx, y2 + ty], color, uv, },
+            Vertex { pos: [x2 - tx, y2 - ty], color, uv, },
         ],
-        vec![0, 1, 2, 2, 1, 3]
+        vec![0, 1, 2, 2, 1, 3],
     )
 }
 
 struct DbusApi {
     send_req: mpsc::Sender<CommandRequest>,
-    recv_res: Arc<Mutex<mpsc::Receiver<CommandResponse>>>
+    recv_res: Arc<Mutex<mpsc::Receiver<CommandResponse>>>,
 }
 
 #[zbus::interface(name = "org.therapy.Therapy")]
@@ -592,13 +747,23 @@ impl DbusApi {
         let res = dbus_request(self, CommandRequest::Hello);
         match res {
             CommandResponse::Hello(res) => res,
-            _ => panic!("unexpected result!")
+            _ => panic!("unexpected result!"),
         }
     }
 
-    async fn draw_line(&self,
-    layer_name: String, x1: f32, y1: f32, x2: f32, y2: f32, thickness: f32, r: f32, g: f32, b: f32, a: f32
-                       ) {
+    async fn draw_line(
+        &self,
+        layer_name: String,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        thickness: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+        a: f32,
+    ) {
         let cmd = CommandRequest::DrawLine(layer_name, x1, y1, x2, y2, thickness, r, g, b, a);
         self.send_req.send(cmd).unwrap();
     }
@@ -617,12 +782,65 @@ impl DbusApi {
         let res = dbus_request(self, CommandRequest::ScreenToWorld(x, y));
         match res {
             CommandResponse::ScreenToWorld(x, y) => (x, y),
-            _ => panic!("unexpected result!")
+            _ => panic!("unexpected result!"),
+        }
+    }
+
+    async fn get_layers(&self) -> Vec<String> {
+        let res = dbus_request(self, CommandRequest::GetLayers);
+        match res {
+            CommandResponse::GetLayers(layer_names) => layer_names,
+            _ => panic!("unexpected result!"),
+        }
+    }
+
+    async fn delete_layer(&self, layer_name: String) -> bool {
+        let res = dbus_request(self, CommandRequest::DeleteLayer(layer_name));
+        match res {
+            CommandResponse::DeleteLayer(is_success) => is_success,
+            _ => panic!("unexpected result!"),
+        }
+    }
+
+    async fn show_layer(&self, layer_name: String) -> bool {
+        let res = dbus_request(self, CommandRequest::ShowLayer(layer_name));
+        match res {
+            CommandResponse::ShowLayer(is_success) => is_success,
+            _ => panic!("unexpected result!"),
+        }
+    }
+
+    async fn hide_layer(&self, layer_name: String) -> bool {
+        let res = dbus_request(self, CommandRequest::HideLayer(layer_name));
+        match res {
+            CommandResponse::HideLayer(is_success) => is_success,
+            _ => panic!("unexpected result!"),
+        }
+    }
+
+    async fn set_layer_pos(&self, layer_name: String, x: f32, y: f32) -> bool {
+        let res = dbus_request(self, CommandRequest::SetLayerPos(layer_name, x, y));
+        match res {
+            CommandResponse::SetLayerPos(is_success) => is_success,
+            _ => panic!("unexpected result!"),
+        }
+    }
+
+    async fn screen_size(&self) -> (f32, f32) {
+        let res = dbus_request(self, CommandRequest::ScreenSize);
+        match res {
+            CommandResponse::ScreenSize(w, h) => (w, h),
+            _ => panic!("unexpected result!"),
         }
     }
 
     #[zbus(signal)]
-    async fn key_down(ctxt: &zbus::SignalContext<'_>, key: &str, keymods: Vec<&str>, repeat: bool) -> zbus::Result<()>;
+    async fn key_down(
+        ctxt: &zbus::SignalContext<'_>,
+        key: &str,
+        keymods: Vec<&str>,
+        repeat: bool,
+    ) -> zbus::Result<()>;
 
     #[zbus(signal)]
     async fn mouse_motion(ctxt: &zbus::SignalContext<'_>, x: f32, y: f32) -> zbus::Result<()>;
@@ -631,10 +849,20 @@ impl DbusApi {
     async fn mouse_wheel(ctxt: &zbus::SignalContext<'_>, x: f32, y: f32) -> zbus::Result<()>;
 
     #[zbus(signal)]
-    async fn mouse_button_down(ctxt: &zbus::SignalContext<'_>, button: &str, x: f32, y: f32) -> zbus::Result<()>;
+    async fn mouse_button_down(
+        ctxt: &zbus::SignalContext<'_>,
+        button: &str,
+        x: f32,
+        y: f32,
+    ) -> zbus::Result<()>;
 
     #[zbus(signal)]
-    async fn mouse_button_up(ctxt: &zbus::SignalContext<'_>, button: &str, x: f32, y: f32) -> zbus::Result<()>;
+    async fn mouse_button_up(
+        ctxt: &zbus::SignalContext<'_>,
+        button: &str,
+        x: f32,
+        y: f32,
+    ) -> zbus::Result<()>;
 }
 
 fn dbus_request(api: &DbusApi, cmd: CommandRequest) -> CommandResponse {
@@ -658,9 +886,7 @@ async fn setup_dbus(connection: &zbus::Connection, dbus_api: DbusApi) -> BoxResu
         .at("/org/therapy/Therapy", dbus_api)
         .await?;
     // before requesting the name
-    connection
-        .request_name("org.therapy.Therapy")
-        .await?;
+    connection.request_name("org.therapy.Therapy").await?;
 
     Ok(())
 }
@@ -686,20 +912,28 @@ fn main() -> BoxResult {
         let (send_req, recv_req) = mpsc::channel();
         let (send_res, recv_res) = mpsc::channel();
 
-        let dbus_api = DbusApi { send_req, recv_res: Arc::new(Mutex::new(recv_res)) };
+        let dbus_api = DbusApi {
+            send_req,
+            recv_res: Arc::new(Mutex::new(recv_res)),
+        };
         let connection = zbus::Connection::session().await?;
         setup_dbus(&connection, dbus_api).await?;
 
         let object_server = connection.object_server();
-        let iface_ref = object_server.interface::<_, DbusApi>("/org/therapy/Therapy").await?;
+        let iface_ref = object_server
+            .interface::<_, DbusApi>("/org/therapy/Therapy")
+            .await?;
         gui_main(recv_req, send_res, iface_ref);
 
         Ok(())
     })
 }
 
-fn gui_main(recv_req: mpsc::Receiver<CommandRequest>, send_res: mpsc::Sender<CommandResponse>,
-            iface_ref: zbus::InterfaceRef<DbusApi>) {
+fn gui_main(
+    recv_req: mpsc::Receiver<CommandRequest>,
+    send_res: mpsc::Sender<CommandResponse>,
+    iface_ref: zbus::InterfaceRef<DbusApi>,
+) {
     #[cfg(target_os = "android")]
     {
         android_logger::init_once(
