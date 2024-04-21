@@ -972,7 +972,6 @@ fn gui_main(
     };
 
     miniquad::start(conf, || {
-        window::show_keyboard(true);
         Box::new(Stage::new(recv_req, send_res, iface_ref))
     });
 }
