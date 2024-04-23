@@ -237,14 +237,14 @@ impl Stage {
             "origin".to_string(),
             -0.1, 0., 0.1, 0.,
             0.001,
-            1., 0., 0., 1.,
+            1., 0., 0., 0.4,
         );
         #[rustfmt::skip]
         stage.draw_line(
             "origin".to_string(),
             0., 0.1, 0., -0.1,
             0.001,
-            1., 0., 0., 1.,
+            1., 0., 0., 0.4,
         );
         stage
     }

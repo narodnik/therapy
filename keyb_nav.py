@@ -15,6 +15,10 @@ async def pan_view():
                 await api.pan(0., -0.01)
             case "Down":
                 await api.pan(0., 0.01)
+            case "Z":
+                await api.zoom(0.95)
+            case "X":
+                await api.zoom(1.05)
 
 async def wheel_zoom():
     async for (x, y) in api.mouse_wheel:
