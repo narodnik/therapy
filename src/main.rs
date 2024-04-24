@@ -3,6 +3,7 @@ use glam::Vec4Swizzles;
 use miniquad::*;
 use std::{
     collections::HashMap,
+    fmt,
     sync::{mpsc, Arc, Mutex},
     time,
 };
@@ -60,10 +61,21 @@ struct Vertex {
     uv: [f32; 2],
 }
 
+#[repr(C)]
+struct Face {
+    idxs: [u32; 3],
+}
+
+impl fmt::Debug for Face {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.idxs)
+    }
+}
+
 struct Layer {
     model: glam::Mat4,
     verts: Vec<Vertex>,
-    idxs: Vec<u32>,
+    faces: Vec<Face>,
     is_hidden: bool,
 }
 
@@ -72,7 +84,7 @@ impl Layer {
         Self {
             model: glam::Mat4::IDENTITY,
             verts: vec![],
-            idxs: vec![],
+            faces: vec![],
             is_hidden: false,
         }
     }
@@ -345,14 +357,16 @@ impl Stage {
             layer_name, x1, y1, x2, y2, thickness, r, g, b, a
         );
         let color = [r, g, b, a];
-        let (mut verts, mut idxs) = draw_line(x1, y1, x2, y2, thickness, color);
+        let (mut verts, mut faces) = draw_line(x1, y1, x2, y2, thickness, color);
         let layer = self.layers.entry(layer_name).or_insert_with(Layer::new);
         let offset = layer.verts.len() as u32;
         layer.verts.append(&mut verts);
-        for idx in &mut idxs {
-            *idx += offset;
+        for face in &mut faces {
+            for idx in &mut face.idxs {
+                *idx += offset;
+            }
         }
-        layer.idxs.append(&mut idxs);
+        layer.faces.append(&mut faces);
     }
 
     fn pan(&mut self, x: f32, y: f32) {
@@ -414,7 +428,7 @@ impl EventHandler for Stage {
 
         for layer in self.layers.values() {
             if layer.is_hidden {
-                continue
+                continue;
             }
 
             let vertex_buffer = self.ctx.new_buffer(
@@ -423,11 +437,17 @@ impl EventHandler for Stage {
                 BufferSource::slice(&layer.verts),
             );
 
-            let index_buffer = self.ctx.new_buffer(
-                BufferType::IndexBuffer,
-                BufferUsage::Immutable,
-                BufferSource::slice(&layer.idxs),
-            );
+            let bufsrc = unsafe {
+                BufferSource::pointer(
+                    layer.faces.as_ptr() as _,
+                    std::mem::size_of_val(&layer.faces[..]),
+                    std::mem::size_of::<u32>(),
+                )
+            };
+
+            let index_buffer =
+                self.ctx
+                    .new_buffer(BufferType::IndexBuffer, BufferUsage::Immutable, bufsrc);
 
             let bindings = Bindings {
                 vertex_buffers: vec![vertex_buffer],
@@ -455,7 +475,7 @@ impl EventHandler for Stage {
             self.ctx
                 .apply_uniforms_from_bytes(uniforms_data.as_ptr(), uniforms_data.len());
 
-            self.ctx.draw(0, layer.idxs.len() as i32, 1);
+            self.ctx.draw(0, 3 * layer.faces.len() as i32, 1);
             self.ctx.end_render_pass();
         }
         self.ctx.commit_frame();
@@ -703,7 +723,7 @@ fn draw_line(
     y2: f32,
     thickness: f32,
     color: [f32; 4],
-) -> (Vec<Vertex>, Vec<u32>) {
+) -> (Vec<Vertex>, Vec<Face>) {
     let dx = x2 - x1;
     let dy = y2 - y1;
 
@@ -732,7 +752,10 @@ fn draw_line(
             Vertex { pos: [x2 + tx, y2 + ty], color, uv, },
             Vertex { pos: [x2 - tx, y2 - ty], color, uv, },
         ],
-        vec![0, 1, 2, 2, 1, 3],
+        vec![
+            Face { idxs: [0, 1, 2] },
+            Face { idxs: [2, 1, 3] }
+        ],
     )
 }
 
@@ -971,9 +994,7 @@ fn gui_main(
         conf::AppleGfxApi::OpenGl
     };
 
-    miniquad::start(conf, || {
-        Box::new(Stage::new(recv_req, send_res, iface_ref))
-    });
+    miniquad::start(conf, || Box::new(Stage::new(recv_req, send_res, iface_ref)));
 }
 
 mod shader {
