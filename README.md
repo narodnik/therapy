@@ -49,6 +49,8 @@ cd ../
 
 ## p2p
 
+### Find Your Ipv6 Address
+
 p2p is done with ipv6. If you don't have ipv6 then make a zmq bridge with some
 server. Pull reqs accepted. Find me narodnik in #math on Libera.
 
@@ -71,6 +73,18 @@ So the string you want now will be:
 ```
 
 Everyone who wants access to your canvas, should now get this address.
+Share it with them.
+
+### Ping a Canvas
+
+You can skip this step, since it's more like troubleshooting. Before proceeding,
+lets try to ping the address and make sure the node is up.
+
+Open `client.py`, and edit the `peer = ...` line with the address.
+Then simply run it using `./client.py`.
+
+### Final Config for Drawing
+
 In `pencil.py` (mouse) or `pencil_libinput.py` (for wacom tablets), in the top of the file, you will see:
 
 ```python
