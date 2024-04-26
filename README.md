@@ -47,3 +47,48 @@ cd ../
 ./pencil_libinput.py
 ```
 
+## p2p
+
+p2p is done with ipv6. If you don't have ipv6 then make a zmq bridge with some
+server. Pull reqs accepted. Find me narodnik in #math on Libera.
+
+Find your ipv6 address with `ip a`.
+
+```
+...
+2: eno1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+    ...
+    inet6 65eb:56ea:aa32:9800:3400:1324:6565:89fe/64 scope global dynamic mngtmpaddr noprefixroute 
+    ..
+```
+
+This is the line with 'global', which means your globalist ipv6 addr.
+Remove the bit at the end which says `/64`, and surround it with `[...]`.
+So the string you want now will be:
+
+```
+[65eb:56ea:aa32:9800:3400:1324:6565:89fe]
+```
+
+Everyone who wants access to your canvas, should now get this address.
+In `pencil.py` (mouse) or `pencil_libinput.py` (for wacom tablets), in the top of the file, you will see:
+
+```python
+PEERS = [
+    #"[XXXX:XXXX:XXXX:XXXX:XXXX:XXXX:XXXX:XXXX]",
+]
+```
+
+Simply replace that with your address and uncomment it like this:
+
+```python
+PEERS = [
+    "[65eb:56ea:aa32:9800:3400:1324:6565:89fe]",
+]
+```
+
+You can add multiple of these lines fyi.
+
+This needs to be done by all participants so they push changes to each other's
+canvas.
+
