@@ -1,117 +1,115 @@
-from sdbus import (DbusInterfaceCommonAsync, dbus_method_async,
-                   dbus_property_async, dbus_signal_async,
-                   sd_bus_open_user)
+import zmq
+from . import serial
 
-class TherapyDbusApi(
-    DbusInterfaceCommonAsync,
-    interface_name='org.therapy.Therapy'
-):
-    @dbus_method_async(
-        result_signature='s',
-    )
-    async def say_hello(self) -> str:
-        raise NotImplementedError
+COMMAND_HELLO = 0
+COMMAND_DRAWLINE = 1
+COMMAND_PAN = 2
+COMMAND_ZOOM = 3
+COMMAND_SCREENTOWORLD = 4
+COMMAND_GETLAYERS = 5
+COMMAND_DELETELAYER = 6
+COMMAND_SHOWLAYER = 7
+COMMAND_HIDELAYER = 8
+COMMAND_SETLAYERPOS = 9
+COMMAND_SCREENSIZE = 10
 
-    @dbus_method_async(
-        input_signature='sddddddddd',
-    )
-    async def draw_line(
-        self, layer_name: str,
-        x1: float, y1: float, x2: float, y2: float,
-        thickness: float,
-        r: float, g: float, b: float, a: float
-    ):
-        raise NotImplementedError
+class Api:
 
-    @dbus_method_async(
-        input_signature='dd',
-    )
-    async def pan(self, x: float, y: float):
-        raise NotImplementedError
+    def __init__(self, port=9464):
+        context = zmq.Context()
+        self.socket = context.socket(zmq.REQ)
+        self.socket.connect(f"tcp://localhost:{port}")
 
-    @dbus_method_async(
-        input_signature='d',
-    )
-    async def zoom(self, scale):
-        raise NotImplementedError
+    def _make_request(self, cmd, payload):
+        req_cmd = bytearray()
+        serial.write_u8(req_cmd, cmd)
+        self.socket.send_multipart([req_cmd, payload])
 
-    @dbus_method_async(
-        input_signature='dd',
-        result_signature='dd',
-    )
-    async def screen_to_world(self, x: float, y: float) -> (float, float):
-        raise NotImplementedError
+        reply = self.socket.recv()
+        cursor = serial.Cursor(reply)
+        return cursor
 
-    @dbus_method_async(
-        result_signature='as',
-    )
-    async def get_layers(self) -> list[str]:
-        raise NotImplementedError
+    def hello(self):
+        response = self._make_request(COMMAND_HELLO, bytearray())
+        return serial.decode_str(response)
 
-    @dbus_method_async(
-        input_signature='s',
-        result_signature='b',
-    )
-    async def delete_layer(self, layer_name: str) -> bool:
-        raise NotImplementedError
+    def draw_line(self, layer_name,
+                  x1, y1, x2, y2, thickness,
+                  r, g, b, a):
+        req = bytearray()
+        serial.encode_str(req, layer_name)
+        serial.write_f32(req, x1)
+        serial.write_f32(req, y1)
+        serial.write_f32(req, x2)
+        serial.write_f32(req, y2)
+        serial.write_f32(req, thickness)
+        serial.write_f32(req, r)
+        serial.write_f32(req, g)
+        serial.write_f32(req, b)
+        serial.write_f32(req, a)
+        _ = self._make_request(COMMAND_DRAWLINE, req)
 
-    @dbus_method_async(
-        input_signature='s',
-        result_signature='b',
-    )
-    async def show_layer(self, layer_name: str) -> bool:
-        raise NotImplementedError
+    def pan(self, x, y):
+        req = bytearray()
+        serial.write_f32(req, x)
+        serial.write_f32(req, y)
+        _ = self._make_request(COMMAND_PAN, req)
 
-    @dbus_method_async(
-        input_signature='s',
-        result_signature='b',
-    )
-    async def hide_layer(self, layer_name: str) -> bool:
-        raise NotImplementedError
+    def zoom(self, scale):
+        req = bytearray()
+        serial.write_f32(req, scale)
+        _ = self._make_request(COMMAND_ZOOM, req)
 
-    @dbus_method_async(
-        input_signature='sdd',
-        result_signature='b',
-    )
-    async def set_layer_pos(self, layer_name: str, x: float, y: float) -> bool:
-        raise NotImplementedError
+    def screen_to_world(self, x, y):
+        req = bytearray()
+        serial.write_f32(req, x)
+        serial.write_f32(req, y)
+        cur = self._make_request(COMMAND_SCREENTOWORLD, req)
+        x = serial.read_f32(cur)
+        y = serial.read_f32(cur)
+        return (x, y)
 
-    @dbus_method_async(
-        result_signature='dd',
-    )
-    async def screen_size(self) -> (float, float):
-        raise NotImplementedError
+    def get_layers(self):
+        cur = self._make_request(COMMAND_GETLAYERS, bytearray())
+        layers_len = serial.decode_varint(cur)
+        layers = []
+        for _ in range(layers_len):
+            layers.append(serial.decode_str(cur))
+        return layers
 
-    @dbus_signal_async(
-        signal_signature='sasb'
-    )
-    def key_down(self, key: str, keymods: list[str], repeat: bool) -> int:
-        raise NotImplementedError
+    def delete_layer(self, layer_name):
+        req = bytearray()
+        serial.encode_str(req, layer_name)
+        cur = self._make_request(COMMAND_DELETELAYER, req)
+        is_success = serial.read_u8(cur)
+        return bool(is_success)
 
-    @dbus_signal_async(
-        signal_signature='dd'
-    )
-    def mouse_motion(self, x: float, y: float) -> int:
-        raise NotImplementedError
+    def show_layer(self, layer_name):
+        req = bytearray()
+        serial.encode_str(req, layer_name)
+        cur = self._make_request(COMMAND_SHOWLAYER, req)
+        is_success = serial.read_u8(cur)
+        return bool(is_success)
 
-    @dbus_signal_async(
-        signal_signature='dd'
-    )
-    def mouse_wheel(self, x: float, y: float) -> int:
-        raise NotImplementedError
+    def hide_layer(self, layer_name):
+        req = bytearray()
+        serial.encode_str(req, layer_name)
+        cur = self._make_request(COMMAND_HIDELAYER, req)
+        is_success = serial.read_u8(cur)
+        return bool(is_success)
 
-    @dbus_signal_async(
-        signal_signature='sdd'
-    )
-    def mouse_button_down(self, button: str, x: float, y: float) -> int:
-        raise NotImplementedError
+    def set_layer_pos(self, layer_name, x, y):
+        req = bytearray()
+        serial.encode_str(req, layer_name)
+        serial.write_f32(req, x)
+        serial.write_f32(req, y)
+        cur = self._make_request(COMMAND_SETLAYERPOS, req)
+        is_success = serial.read_u8(cur)
+        return bool(is_success)
 
-    @dbus_signal_async(
-        signal_signature='sdd'
-    )
-    def mouse_button_up(self, button: str, x: float, y: float) -> int:
-        raise NotImplementedError
-
-bus = sd_bus_open_user()
-api = TherapyDbusApi.new_proxy("org.therapy.Therapy", "/org/therapy/Therapy", bus)
+    def screen_size(self):
+        cur = self._make_request(COMMAND_SCREENSIZE, bytearray())
+        w = serial.read_f32(cur)
+        h = serial.read_f32(cur)
+        return (w, h)
 

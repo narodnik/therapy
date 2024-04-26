@@ -1,23 +1,24 @@
 #!/usr/bin/python
 # Draw lines by clicking
-import asyncio
-from pytherapy import (api, run_async_tasks)
+from pytherapy import Api, Event, MouseButton, Notifier
 
-async def line_tool():
-    points = []
-    async for (button, x, y) in api.mouse_button_down:
-        if button == "Left":
-            points.append((x, y))
-            if len(points) == 2:
-                p1x, p1y = points[0]
-                p2x, p2y = points[1]
-                points = []
-                await api.draw_line(
-                    "genjix",
-                    p1x, p1y, p2x, p2y, 0.01,
-                    1.0, 0.0, 0.0, 1.0
-                )
-        print(f"Mouse button down: {button} @ ({x}, {y})")
+points = []
 
-run_async_tasks([line_tool()])
+api = Api()
+notify = Notifier()
+notify.set_filter(Event.MOUSE_BUTTON_DOWN)
+
+for ev in notify:
+    if ev.button == MouseButton.LEFT:
+        points.append((ev.x, ev.y))
+        if len(points) == 2:
+            p1x, p1y = points[0]
+            p2x, p2y = points[1]
+            points = []
+            api.draw_line(
+                "genjix",
+                p1x, p1y, p2x, p2y, 0.01,
+                1.0, 0.0, 0.0, 1.0
+            )
+    print(f"Mouse button down: {ev.button} @ ({ev.x}, {ev.y})")
 
