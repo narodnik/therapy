@@ -42,7 +42,7 @@ api.draw_line(
     *CURSOR_COLOR
 )
 
-while True:
+while li.wait() > -1:
     events = li.poll()
     for event in events:
         # tip up / down
