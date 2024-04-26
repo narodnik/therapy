@@ -1,8 +1,8 @@
 #!/usr/bin/python
 # Keyboard navigation
-from pytherapy import Api, Event, MouseButton, Notifier
+from pytherapy import PushApi, Event, MouseButton, Notifier
 
-api = Api()
+api = PushApi()
 notify = Notifier()
 
 def pan_view(ev):

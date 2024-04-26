@@ -13,25 +13,17 @@ COMMAND_HIDELAYER = 8
 COMMAND_SETLAYERPOS = 9
 COMMAND_SCREENSIZE = 10
 
-class Api:
+class PushApi:
 
-    def __init__(self, port=9464):
+    def __init__(self, addr="localhost", port=9466):
         context = zmq.Context()
-        self.socket = context.socket(zmq.REQ)
-        self.socket.connect(f"tcp://localhost:{port}")
+        self.socket = context.socket(zmq.PUB)
+        self.socket.connect(f"tcp://{addr}:{port}")
 
-    def _make_request(self, cmd, payload):
+    def _push_cmd(self, cmd, payload):
         req_cmd = bytearray()
         serial.write_u8(req_cmd, cmd)
         self.socket.send_multipart([req_cmd, payload])
-
-        reply = self.socket.recv()
-        cursor = serial.Cursor(reply)
-        return cursor
-
-    def hello(self):
-        response = self._make_request(COMMAND_HELLO, bytearray())
-        return serial.decode_str(response)
 
     def draw_line(self, layer_name,
                   x1, y1, x2, y2, thickness,
@@ -47,18 +39,38 @@ class Api:
         serial.write_f32(req, g)
         serial.write_f32(req, b)
         serial.write_f32(req, a)
-        _ = self._make_request(COMMAND_DRAWLINE, req)
+        self._push_cmd(COMMAND_DRAWLINE, req)
 
     def pan(self, x, y):
         req = bytearray()
         serial.write_f32(req, x)
         serial.write_f32(req, y)
-        _ = self._make_request(COMMAND_PAN, req)
+        _ = self._push_cmd(COMMAND_PAN, req)
 
     def zoom(self, scale):
         req = bytearray()
         serial.write_f32(req, scale)
-        _ = self._make_request(COMMAND_ZOOM, req)
+        _ = self._push_cmd(COMMAND_ZOOM, req)
+
+class ReqApi:
+
+    def __init__(self, addr="localhost", port=9464):
+        context = zmq.Context()
+        self.socket = context.socket(zmq.REQ)
+        self.socket.connect(f"tcp://{addr}:{port}")
+
+    def _make_request(self, cmd, payload):
+        req_cmd = bytearray()
+        serial.write_u8(req_cmd, cmd)
+        self.socket.send_multipart([req_cmd, payload])
+
+        reply = self.socket.recv()
+        cursor = serial.Cursor(reply)
+        return cursor
+
+    def hello(self):
+        response = self._make_request(COMMAND_HELLO, bytearray())
+        return serial.decode_str(response)
 
     def screen_to_world(self, x, y):
         req = bytearray()

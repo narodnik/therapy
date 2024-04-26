@@ -120,8 +120,12 @@ struct Stage {
     white_texture: TextureId,
     layers: HashMap<String, Layer>,
     proj: glam::Mat4,
+    // req-reply commands
     req_socket: zmq::Socket,
+    // events from this canvas
     pub_socket: zmq::Socket,
+    // low latency no reply commands
+    sub_socket: zmq::Socket,
 }
 
 impl Stage {
@@ -252,9 +256,12 @@ impl Stage {
         */
         let zmq_ctx = zmq::Context::new();
         let req_socket = zmq_ctx.socket(zmq::REP).unwrap();
-        assert!(req_socket.bind("tcp://*:9464").is_ok());
+        req_socket.bind("tcp://*:9464").unwrap();
         let pub_socket = zmq_ctx.socket(zmq::PUB).unwrap();
-        assert!(pub_socket.bind("tcp://*:9465").is_ok());
+        pub_socket.bind("tcp://*:9465").unwrap();
+        let sub_socket = zmq_ctx.socket(zmq::SUB).unwrap();
+        sub_socket.set_subscribe(b"").unwrap();
+        sub_socket.bind("tcp://*:9466").unwrap();
 
         let mut stage = Stage {
             ctx,
@@ -264,6 +271,7 @@ impl Stage {
             layers: HashMap::new(),
             req_socket,
             pub_socket,
+            sub_socket
         };
         //stage.layers.insert("box1".to_string(), layer1);
         //stage.layers.insert("box2".to_string(), layer2);
@@ -353,35 +361,8 @@ impl Stage {
                 assert_eq!(payload.len(), 0);
                 "hello".encode(&mut reply).unwrap();
             }
-            Command::DrawLine => {
-                let params: RequestDrawLine = deserialize(&payload).unwrap();
-                //debug!("draw_line({:?})", params);
-                // maybe this method should in fact be pulling from multiple streams instead?
-                self.draw_line(
-                    params.layer_name,
-                    params.x1,
-                    params.y1,
-                    params.x2,
-                    params.y2,
-                    params.thickness,
-                    params.r,
-                    params.g,
-                    params.b,
-                    params.a,
-                )
-            }
-            Command::Pan => {
-                //let params: RequestPan = deserialize(&payload).unwrap();
-                let mut cur = Cursor::new(payload);
-                let x = f32::decode(&mut cur).unwrap();
-                let y = f32::decode(cur).unwrap();
-                debug!("pan({}, {})", x, y);
-                self.pan(x, y)
-            }
-            Command::Zoom => {
-                let scale: f32 = deserialize(&payload).unwrap();
-                debug!("zoom({})", scale);
-                self.zoom(scale)
+            Command::DrawLine | Command::Pan | Command::Zoom => {
+                panic!("use sub socket instead!");
             }
             Command::ScreenToWorld => {
                 let mut cur = Cursor::new(payload);
@@ -453,6 +434,50 @@ impl Stage {
 
         self.req_socket.send(reply, 0).unwrap();
     }
+
+    fn process_sub(&mut self) {
+        let req = self.sub_socket.recv_multipart(zmq::DONTWAIT).unwrap();
+
+        assert_eq!(req[0].len(), 1);
+        assert_eq!(req.len(), 2);
+        let cmd = Command::from_u8(req[0][0]);
+        let payload = req[1].clone();
+
+        match cmd {
+            Command::DrawLine => {
+                let params: RequestDrawLine = deserialize(&payload).unwrap();
+                //debug!("draw_line({:?})", params);
+                self.draw_line(
+                    params.layer_name,
+                    params.x1,
+                    params.y1,
+                    params.x2,
+                    params.y2,
+                    params.thickness,
+                    params.r,
+                    params.g,
+                    params.b,
+                    params.a,
+                )
+            }
+            Command::Pan => {
+                //let params: RequestPan = deserialize(&payload).unwrap();
+                let mut cur = Cursor::new(payload);
+                let x = f32::decode(&mut cur).unwrap();
+                let y = f32::decode(cur).unwrap();
+                debug!("pan({}, {})", x, y);
+                self.pan(x, y)
+            }
+            Command::Zoom => {
+                let scale: f32 = deserialize(&payload).unwrap();
+                debug!("zoom({})", scale);
+                self.zoom(scale)
+            }
+            _ => {
+                panic!("only for no reply messages!")
+            }
+        }
+    }
 }
 
 impl EventHandler for Stage {
@@ -461,10 +486,21 @@ impl EventHandler for Stage {
         let mut remaining = 20i64;
         loop {
             // https://github.com/johnliu55tw/rust-zmq-poller/blob/master/src/main.rs
-            let mut items = [self.req_socket.as_poll_item(zmq::POLLIN)];
+            let mut items = [
+                self.req_socket.as_poll_item(zmq::POLLIN),
+                self.sub_socket.as_poll_item(zmq::POLLIN),
+            ];
             let _rc = zmq::poll(&mut items, remaining).unwrap();
-            if items[0].is_readable() {
+
+            // Rust borrow checker things
+            let (is_item0_readable, is_item1_readable) = (items[0].is_readable(), items[1].is_readable());
+            drop(items);
+
+            if is_item0_readable {
                 self.process_req()
+            }
+            if is_item1_readable {
+                self.process_sub()
             }
 
             remaining -= instant.elapsed().as_millis() as i64;

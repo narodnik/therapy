@@ -1,11 +1,11 @@
 #!/usr/bin/python
 # Mouse pencil tool
-from pytherapy import Api, Event, MouseButton, Notifier
+from pytherapy import PushApi, Event, MouseButton, Notifier
 
 MOUSE_STATE = 0
 current_pos = (0., 0.)
 
-api = Api()
+api = PushApi()
 notify = Notifier()
 for ev in notify:
     match ev.type:

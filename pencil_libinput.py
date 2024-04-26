@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # Mouse pencil tool
 import python_libinput
-from pytherapy import Api, Event, MouseButton, Notifier
+from pytherapy import PushApi, ReqApi, Event, MouseButton, Notifier
 
 CURSOR_SIZE = 0.02
 CURSOR_COLOR = (1.0, 0.0, 0.0, 1.0)
@@ -10,11 +10,12 @@ LINE_COLOR = (1.0, 0.0, 0.0, 1.0)
 MOUSE_STATE = 0
 current_pos = None
 
-api = Api()
+api = PushApi()
+reqapi = ReqApi()
 li = python_libinput.libinput()
 assert li.start()
 
-api.delete_layer("wacom_cursor")
+reqapi.delete_layer("wacom_cursor")
 # Draw a crosshair
 api.draw_line(
     "wacom_cursor",
@@ -34,15 +35,15 @@ while True:
         if event.type == 0:
             if event.tip_is_down:
                 MOUSE_STATE = 1
-                api.hide_layer("wacom_cursor")
+                reqapi.hide_layer("wacom_cursor")
             else:
                 MOUSE_STATE = 0
                 current_pos = None
-                api.show_layer("wacom_cursor")
+                reqapi.show_layer("wacom_cursor")
         # cursor move
         elif event.type == 1:
             x, y = event.x, event.y
-            x, y = api.screen_to_world(x, y)
+            x, y = reqapi.screen_to_world(x, y)
             #print(x, y)
             if MOUSE_STATE == 1:
                 if current_pos is None:
@@ -57,5 +58,5 @@ while True:
                 )
                 current_pos = (x, y)
             else:
-                api.set_layer_pos("wacom_cursor", x, y)
+                reqapi.set_layer_pos("wacom_cursor", x, y)
 
