@@ -7,11 +7,25 @@ CURSOR_SIZE = 0.02
 CURSOR_COLOR = (1.0, 0.0, 0.0, 1.0)
 LINE_COLOR = (1.0, 0.0, 0.0, 1.0)
 
+PEERS = [
+    #"[XXXX:XXXX:XXXX:XXXX:XXXX:XXXX:XXXX:XXXX]",
+]
+
 MOUSE_STATE = 0
 current_pos = None
 
 api = PushApi()
 reqapi = ReqApi()
+peers_api = [PushApi(peer) for peer in PEERS]
+
+def draw_line(layer_name, x1, y1, x2, y2, thickness, r, g, b, a):
+    for peer_api in [api] + peers_api:
+        peer_api.draw_line(
+            layer_name,
+            x1, y1, x2, y2, thickness,
+            r, g, b, a
+        )
+
 li = python_libinput.libinput()
 assert li.start()
 
@@ -51,7 +65,7 @@ while True:
                     continue
 
                 x0, y0 = current_pos
-                api.draw_line(
+                draw_line(
                     "genjix",
                     x0, y0, x, y, 0.001,
                     *LINE_COLOR

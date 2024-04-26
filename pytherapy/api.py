@@ -15,9 +15,10 @@ COMMAND_SCREENSIZE = 10
 
 class PushApi:
 
-    def __init__(self, addr="localhost", port=9466):
+    def __init__(self, addr="[::1]", port=9466):
         context = zmq.Context()
         self.socket = context.socket(zmq.PUB)
+        self.socket.setsockopt(zmq.IPV6, True)
         self.socket.connect(f"tcp://{addr}:{port}")
 
     def _push_cmd(self, cmd, payload):
@@ -54,9 +55,10 @@ class PushApi:
 
 class ReqApi:
 
-    def __init__(self, addr="localhost", port=9464):
+    def __init__(self, addr="[::1]", port=9464):
         context = zmq.Context()
         self.socket = context.socket(zmq.REQ)
+        self.socket.setsockopt(zmq.IPV6, True)
         self.socket.connect(f"tcp://{addr}:{port}")
 
     def _make_request(self, cmd, payload):

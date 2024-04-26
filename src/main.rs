@@ -256,10 +256,13 @@ impl Stage {
         */
         let zmq_ctx = zmq::Context::new();
         let req_socket = zmq_ctx.socket(zmq::REP).unwrap();
+        req_socket.set_ipv6(true).unwrap();
         req_socket.bind("tcp://*:9464").unwrap();
         let pub_socket = zmq_ctx.socket(zmq::PUB).unwrap();
+        pub_socket.set_ipv6(true).unwrap();
         pub_socket.bind("tcp://*:9465").unwrap();
         let sub_socket = zmq_ctx.socket(zmq::SUB).unwrap();
+        sub_socket.set_ipv6(true).unwrap();
         sub_socket.set_subscribe(b"").unwrap();
         sub_socket.bind("tcp://*:9466").unwrap();
 
