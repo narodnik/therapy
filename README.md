@@ -12,7 +12,7 @@ then connect myself to others using ZMQ pipes in Python.
 ## Philosophy
 
 There is a binary responsible for rendering the world and you communicate
-with it using DBus python.
+with it using ZMQ python.
 
 Then you can run python scripts to enable or disable certain features.
 These can be:
@@ -23,16 +23,13 @@ These can be:
 
 ## Usage
 
-You will need a dbus session. If not enabled in your WM, then to start:
+Start the canvas:
 
 ```
-dbus-run-session bash
+cargo run
 ```
 
-From here, you can spawn terminals as needed, by running `term &` where term is
-the name of your terminal.
-
-In one terminal, run `cargo run`.
+Leave this running.
 
 Then in another terminal run any of these python scripts:
 
@@ -40,4 +37,13 @@ Then in another terminal run any of these python scripts:
   out with the mouse wheel.
 * `linetool.py` - click once to start a line, click again to draw it.
 * `pencil.py` - click and drag to draw lines. It's the pencil tool.
+
+If you want to use a wacom, you need `libinput-dev` installed, then run:
+
+```
+cd python-libbinput/
+make
+cd ../
+./pencil_libinput.py
+```
 
