@@ -364,9 +364,6 @@ impl Stage {
                 assert_eq!(payload.len(), 0);
                 "hello".encode(&mut reply).unwrap();
             }
-            Command::DrawLine | Command::Pan | Command::Zoom => {
-                panic!("use sub socket instead!");
-            }
             Command::ScreenToWorld => {
                 let mut cur = Cursor::new(payload);
                 let x = f32::decode(&mut cur).unwrap();
@@ -432,6 +429,9 @@ impl Stage {
                 let (screen_width, screen_height) = window::screen_size();
                 screen_width.encode(&mut reply).unwrap();
                 screen_height.encode(&mut reply).unwrap();
+            }
+            _ => {
+                panic!("use sub socket instead!");
             }
         }
 
